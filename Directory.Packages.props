@@ -1,0 +1,12 @@
+<Project>
+
+  <ItemGroup>
+    <!-- Database -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.5" />
+
+    <!-- CLI -->
+    <PackageVersion Include="Terminal.Gui" Version="1.19.0" />
+
+  </ItemGroup>
+
+</Project>
