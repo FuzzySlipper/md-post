@@ -13,7 +13,9 @@ await dbInit.InitializeAsync();
 var db = new DbConnectionFactory(dbInit.ConnectionString);
 var repo = new PostRepository(db);
 
-IPasteService[] pasteServices = [new RentryService(), new PasteRsService()];
+var blogConfig = BlogService.LoadConfig();
+var cfConfig = CloudflarePagesService.LoadConfig();
+IPasteService[] pasteServices = [new RentryService(), new PasteRsService(), new BlogService(blogConfig), new CloudflarePagesService(cfConfig)];
 
 // Route commands
 var command = args.Length > 0 ? args[0] : null;
@@ -28,6 +30,10 @@ switch (command)
         return await CliSearch(args, repo);
     case "url":
         return await CliUrl(args, repo);
+    case "blog-init":
+        return CliBlogInit(args);
+    case "cf-blog-init":
+        return CliCfBlogInit(args);
     case "help" or "--help" or "-h":
         PrintHelp();
         return 0;
@@ -108,7 +114,7 @@ static async Task<int> CliUpload(string[] args, PostRepository repo, IPasteServi
     }
     else
     {
-        Console.Error.WriteLine("Usage: mdpost upload <file> [--title <title>] [--tags <t1,t2>] [--backend rentry|paste.rs] [--local] [--stdin]");
+        Console.Error.WriteLine("Usage: mdpost upload <file> [--title <title>] [--tags <t1,t2>] [--backend rentry|paste.rs|blog] [--local] [--stdin]");
         return 1;
     }
 
@@ -142,7 +148,14 @@ static async Task<int> CliUpload(string[] args, PostRepository repo, IPasteServi
         var service = pasteServices.FirstOrDefault(s => s.Name == backend) ?? pasteServices[0];
         try
         {
-            var result = await service.UploadAsync(content);
+            // For the blog backend, prepend frontmatter with title/tags if not already present
+            var uploadContent = content;
+            if (service.Name is "blog" or "cf-blog" && !content.TrimStart().StartsWith("---"))
+            {
+                var fmTags = tags is { Count: > 0 } ? $"\ntags: [{string.Join(", ", tags)}]" : "";
+                uploadContent = $"---\ntitle: \"{title}\"{fmTags}\n---\n\n{content}";
+            }
+            var result = await service.UploadAsync(uploadContent, slug);
             post.RemoteUrl = result.Url;
             post.EditCode = result.EditCode;
             post.Backend = result.Backend;
@@ -281,6 +294,81 @@ static async Task<int> CliUrl(string[] args, PostRepository repo)
     return 0;
 }
 
+static int CliBlogInit(string[] args)
+{
+    string? repoPath = null;
+    string? baseUrl = null;
+
+    for (var i = 1; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--repo" when i + 1 < args.Length:
+                repoPath = args[++i];
+                break;
+            case "--url" when i + 1 < args.Length:
+                baseUrl = args[++i];
+                break;
+        }
+    }
+
+    repoPath ??= Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".md-post", "blog");
+    baseUrl ??= "https://fuzzyslipper.github.io/blog";
+
+    Console.WriteLine($"Blog repo path: {repoPath}");
+    Console.WriteLine($"Blog base URL:  {baseUrl}");
+
+    var config = new BlogConfig
+    {
+        RepoPath = Path.GetFullPath(repoPath),
+        BaseUrl = baseUrl
+    };
+    BlogService.SaveConfig(config);
+
+    Console.WriteLine("Blog config saved. Use --backend blog to publish posts.");
+    return 0;
+}
+
+static int CliCfBlogInit(string[] args)
+{
+    string? repoPath = null;
+    string? baseUrl = null;
+
+    for (var i = 1; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--repo" when i + 1 < args.Length:
+                repoPath = args[++i];
+                break;
+            case "--url" when i + 1 < args.Length:
+                baseUrl = args[++i];
+                break;
+        }
+    }
+
+    if (repoPath is null || baseUrl is null)
+    {
+        Console.Error.WriteLine("Usage: mdpost cf-blog-init --repo <path-to-local-clone> --url <site-base-url>");
+        return 1;
+    }
+
+    Console.WriteLine($"CF blog repo path: {repoPath}");
+    Console.WriteLine($"CF blog base URL:  {baseUrl}");
+
+    var config = new CfPagesConfig
+    {
+        RepoPath = Path.GetFullPath(repoPath),
+        BaseUrl = baseUrl
+    };
+    CloudflarePagesService.SaveConfig(config);
+
+    Console.WriteLine("Cloudflare Pages blog config saved. Use --backend cf-blog to publish posts.");
+    return 0;
+}
+
 static void PrintHelp()
 {
     Console.WriteLine("""
@@ -293,14 +381,19 @@ static void PrintHelp()
           mdpost list [--tag <t>]   List all posts, optionally filter by tag
           mdpost search <query>     Full-text search across posts
           mdpost url <slug>         Print the remote URL for a post
+          mdpost blog-init          Configure the blog backend
           mdpost help               Show this help
 
         Upload options:
           --title, -t <title>       Post title (defaults to filename)
           --tags <t1,t2>            Comma-separated tags
-          --backend, -b <name>      Paste service: rentry (default), paste.rs
+          --backend, -b <name>      rentry (default), paste.rs, blog, cf-blog
           --local                   Save locally only, don't upload
           --stdin                   Read content from stdin
+
+        Blog setup:
+          mdpost blog-init [--repo <path>] [--url <base-url>]
+          mdpost cf-blog-init --repo <path> --url <base-url>
         """);
 }
 

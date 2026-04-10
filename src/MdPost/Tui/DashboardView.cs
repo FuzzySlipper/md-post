@@ -344,7 +344,13 @@ internal sealed class DashboardView : Toplevel
             var service = _pasteServices[backendIdx];
             try
             {
-                var result = await service.UploadAsync(content);
+                var uploadContent = content;
+                if (service.Name is "blog" or "cf-blog" && !content.TrimStart().StartsWith("---"))
+                {
+                    var fmTags = tags is { Count: > 0 } ? $"\ntags: [{string.Join(", ", tags)}]" : "";
+                    uploadContent = $"---\ntitle: \"{title}\"{fmTags}\n---\n\n{content}";
+                }
+                var result = await service.UploadAsync(uploadContent, slug);
                 post.RemoteUrl = result.Url;
                 post.EditCode = result.EditCode;
                 post.Backend = result.Backend;
