@@ -9,6 +9,7 @@ internal sealed class DashboardView : Toplevel
 {
     private readonly PostRepository _repo;
     private readonly IPasteService[] _pasteServices;
+    private readonly string _defaultBackend;
     private readonly FrameView _tagFrame;
     private readonly ListView _tagList;
     private readonly FrameView _postFrame;
@@ -20,10 +21,11 @@ internal sealed class DashboardView : Toplevel
     private string? _activeTag;
     private bool _refreshing;
 
-    public DashboardView(PostRepository repo, IPasteService[] pasteServices)
+    public DashboardView(PostRepository repo, IPasteService[] pasteServices, string defaultBackend)
     {
         _repo = repo;
         _pasteServices = pasteServices;
+        _defaultBackend = defaultBackend;
 
         // Tag sidebar (left, 20 wide)
         _tagList = new ListView
@@ -230,10 +232,17 @@ internal sealed class DashboardView : Toplevel
 
     private async Task UploadExistingPost(Post post)
     {
-        var service = _pasteServices[0]; // Default to first service
+        var service = ResolveService(post.Backend ?? _defaultBackend);
+        if (service is null)
+        {
+            MessageBox.Query("Error", "No upload backend is configured.", "OK");
+            return;
+        }
+
         try
         {
-            var result = await service.UploadAsync(post.Content);
+            var uploadContent = UploadContentBuilder.Prepare(service.Name, post.Title, post.Tags, post.Content);
+            var result = await service.UploadAsync(uploadContent, post.Slug);
             await _repo.UpdateRemoteAsync(post.Slug, result.Url, result.EditCode, result.Backend);
             CopyToClipboard(result.Url);
             MessageBox.Query("Uploaded", $"URL copied to clipboard:\n{result.Url}", "OK");
@@ -267,6 +276,7 @@ internal sealed class DashboardView : Toplevel
             X = 12, Y = 9,
             DisplayMode = DisplayModeLayout.Horizontal
         };
+        backendRadio.SelectedItem = FindBackendIndex(_defaultBackend);
 
         dlg.Add(titleLabel, titleField, tagsLabel, tagsField, tagsHint,
                 sourceLabel, sourceField, sourceHint, backendLabel, backendRadio);
@@ -344,12 +354,7 @@ internal sealed class DashboardView : Toplevel
             var service = _pasteServices[backendIdx];
             try
             {
-                var uploadContent = content;
-                if (service.Name is "blog" or "cf-blog" && !content.TrimStart().StartsWith("---"))
-                {
-                    var fmTags = tags is { Count: > 0 } ? $"\ntags: [{string.Join(", ", tags)}]" : "";
-                    uploadContent = $"---\ntitle: \"{title}\"{fmTags}\n---\n\n{content}";
-                }
+                var uploadContent = UploadContentBuilder.Prepare(service.Name, title, tags, content);
                 var result = await service.UploadAsync(uploadContent, slug);
                 post.RemoteUrl = result.Url;
                 post.EditCode = result.EditCode;
@@ -608,4 +613,18 @@ internal sealed class DashboardView : Toplevel
 
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : s[..(max - 3)] + "...";
+
+    private int FindBackendIndex(string backendName)
+    {
+        var index = Array.FindIndex(_pasteServices, service =>
+            string.Equals(service.Name, backendName, StringComparison.OrdinalIgnoreCase));
+
+        return index >= 0 ? index : 0;
+    }
+
+    private IPasteService? ResolveService(string backendName)
+    {
+        return _pasteServices.FirstOrDefault(service =>
+            string.Equals(service.Name, backendName, StringComparison.OrdinalIgnoreCase));
+    }
 }

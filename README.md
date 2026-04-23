@@ -32,17 +32,20 @@ dotnet tool install --global --add-source nupkg mdpost
 ### Upload a file
 
 ```bash
-# Upload to rentry.co (default), prints URL to stdout
+# Upload to your saved default backend (rentry initially), prints URL to stdout
 mdpost upload analysis.md --title "SCS Analysis" --tags "geopolitics,south-china-sea"
 
 # Upload from stdin
 echo "# Quick note" | mdpost upload --stdin --title "Quick Note" --tags "misc"
 
-# Use paste.rs instead
+# Use a different backend just for this upload
 mdpost upload doc.md --backend paste.rs
 
 # Save locally only (no upload)
 mdpost upload doc.md --local --tags "draft"
+
+# Change the default backend for future uploads
+mdpost default-backend blog
 ```
 
 ### List and search
@@ -86,14 +89,29 @@ Keyboard shortcuts:
 | Tab | Switch panels |
 | Ctrl+Q | Quit |
 
+### Personal blog backend
+
+```bash
+# Point mdpost at your GitHub Pages blog repo
+mdpost blog-init --repo ~/.md-post/blog --url https://fuzzyslipper.github.io/blog
+
+# Make blog publishing the default target
+mdpost default-backend blog
+
+# Install the bundled dark theme with improved markdown/code styling
+mdpost blog-theme
+```
+
 ## Backends
 
 | Backend | Markdown rendering | Content filtering | Edit/Delete | Notes |
 |---------|-------------------|-------------------|-------------|-------|
 | **rentry.co** (default) | Excellent | Minimal (human moderation) | Yes (via edit codes) | Best rendering |
 | **paste.rs** | Yes (append .md to URL) | None documented | No | Simplest |
+| **blog** | Jekyll / GitHub Pages | Your repo, your rules | Yes (via git overwrite/delete) | Works well with `mdpost blog-theme` |
+| **cf-blog** | Jekyll / Cloudflare Pages | Your repo, your rules | Yes (via git overwrite/delete) | Same post format, different host |
 
-Both backends are anonymous -- no account needed, nothing tied to your identity.
+The paste backends stay anonymous. The blog backends publish into a repo you control instead.
 
 ## Storage
 

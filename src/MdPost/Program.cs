@@ -3,19 +3,11 @@ using MdPost.Services;
 using MdPost.Tui;
 using Terminal.Gui;
 
-var dbPath = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-    ".md-post", "mdpost.db");
-
-var dbInit = new DatabaseInitializer(dbPath);
-await dbInit.InitializeAsync();
-
-var db = new DbConnectionFactory(dbInit.ConnectionString);
-var repo = new PostRepository(db);
-
+var appConfig = MdPostConfig.Load();
 var blogConfig = BlogService.LoadConfig();
 var cfConfig = CloudflarePagesService.LoadConfig();
 IPasteService[] pasteServices = [new RentryService(), new PasteRsService(), new BlogService(blogConfig), new CloudflarePagesService(cfConfig)];
+var defaultBackend = GetDefaultBackend(appConfig, pasteServices);
 
 // Route commands
 var command = args.Length > 0 ? args[0] : null;
@@ -23,30 +15,47 @@ var command = args.Length > 0 ? args[0] : null;
 switch (command)
 {
     case "upload":
-        return await CliUpload(args, repo, pasteServices);
+        return await CliUpload(args, await CreateRepoAsync(), pasteServices, defaultBackend);
     case "list":
-        return await CliList(args, repo);
+        return await CliList(args, await CreateRepoAsync());
     case "search":
-        return await CliSearch(args, repo);
+        return await CliSearch(args, await CreateRepoAsync());
     case "url":
-        return await CliUrl(args, repo);
+        return await CliUrl(args, await CreateRepoAsync());
+    case "default-backend":
+        return CliDefaultBackend(args, appConfig, pasteServices);
     case "blog-init":
         return CliBlogInit(args);
+    case "blog-theme":
+        return CliBlogTheme(args);
     case "cf-blog-init":
         return CliCfBlogInit(args);
     case "help" or "--help" or "-h":
         PrintHelp();
         return 0;
     default:
-        return RunTui(repo, pasteServices);
+        return RunTui(await CreateRepoAsync(), pasteServices, defaultBackend);
 }
 
-static int RunTui(PostRepository repo, IPasteService[] pasteServices)
+static async Task<PostRepository> CreateRepoAsync()
+{
+    var dbPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".md-post", "mdpost.db");
+
+    var dbInit = new DatabaseInitializer(dbPath);
+    await dbInit.InitializeAsync();
+
+    var db = new DbConnectionFactory(dbInit.ConnectionString);
+    return new PostRepository(db);
+}
+
+static int RunTui(PostRepository repo, IPasteService[] pasteServices, string defaultBackend)
 {
     Application.Init();
     try
     {
-        var dashboard = new DashboardView(repo, pasteServices);
+        var dashboard = new DashboardView(repo, pasteServices, defaultBackend);
         Application.Top.Add(dashboard);
         _ = dashboard.StartAsync();
         Application.Run();
@@ -58,12 +67,12 @@ static int RunTui(PostRepository repo, IPasteService[] pasteServices)
     return 0;
 }
 
-static async Task<int> CliUpload(string[] args, PostRepository repo, IPasteService[] pasteServices)
+static async Task<int> CliUpload(string[] args, PostRepository repo, IPasteService[] pasteServices, string defaultBackend)
 {
     string? filePath = null;
     string? title = null;
     string? tagsStr = null;
-    string backend = "rentry";
+    string backend = defaultBackend;
     bool localOnly = false;
     bool fromStdin = false;
 
@@ -114,7 +123,7 @@ static async Task<int> CliUpload(string[] args, PostRepository repo, IPasteServi
     }
     else
     {
-        Console.Error.WriteLine("Usage: mdpost upload <file> [--title <title>] [--tags <t1,t2>] [--backend rentry|paste.rs|blog] [--local] [--stdin]");
+        Console.Error.WriteLine("Usage: mdpost upload <file> [--title <title>] [--tags <t1,t2>] [--backend rentry|paste.rs|blog|cf-blog] [--local] [--stdin]");
         return 1;
     }
 
@@ -145,16 +154,16 @@ static async Task<int> CliUpload(string[] args, PostRepository repo, IPasteServi
 
     if (!localOnly)
     {
-        var service = pasteServices.FirstOrDefault(s => s.Name == backend) ?? pasteServices[0];
+        var service = FindPasteService(pasteServices, backend);
+        if (service is null)
+        {
+            Console.Error.WriteLine($"Unknown backend '{backend}'. Available backends: {FormatBackendList(pasteServices)}");
+            return 1;
+        }
+
         try
         {
-            // For the blog backend, prepend frontmatter with title/tags if not already present
-            var uploadContent = content;
-            if (service.Name is "blog" or "cf-blog" && !content.TrimStart().StartsWith("---"))
-            {
-                var fmTags = tags is { Count: > 0 } ? $"\ntags: [{string.Join(", ", tags)}]" : "";
-                uploadContent = $"---\ntitle: \"{title}\"{fmTags}\n---\n\n{content}";
-            }
+            var uploadContent = UploadContentBuilder.Prepare(service.Name, title, tags, content);
             var result = await service.UploadAsync(uploadContent, slug);
             post.RemoteUrl = result.Url;
             post.EditCode = result.EditCode;
@@ -178,6 +187,34 @@ static async Task<int> CliUpload(string[] args, PostRepository repo, IPasteServi
         Console.WriteLine($"Saved locally as: {post.Slug}");
     }
 
+    return 0;
+}
+
+static int CliDefaultBackend(string[] args, MdPostConfig config, IPasteService[] pasteServices)
+{
+    if (args.Length == 1)
+    {
+        Console.WriteLine(GetDefaultBackend(config, pasteServices));
+        return 0;
+    }
+
+    if (args[1] is "--list" or "-l")
+    {
+        Console.WriteLine(FormatBackendList(pasteServices));
+        return 0;
+    }
+
+    var service = FindPasteService(pasteServices, args[1]);
+    if (service is null)
+    {
+        Console.Error.WriteLine($"Unknown backend '{args[1]}'. Available backends: {FormatBackendList(pasteServices)}");
+        return 1;
+    }
+
+    config.DefaultBackend = service.Name;
+    MdPostConfig.Save(config);
+
+    Console.WriteLine($"Default backend set to: {service.Name}");
     return 0;
 }
 
@@ -327,7 +364,42 @@ static int CliBlogInit(string[] args)
     };
     BlogService.SaveConfig(config);
 
-    Console.WriteLine("Blog config saved. Use --backend blog to publish posts.");
+    Console.WriteLine("Blog config saved. Use `mdpost default-backend blog` to make it the default upload target.");
+    Console.WriteLine("Run `mdpost blog-theme` to install the bundled dark blog theme.");
+    return 0;
+}
+
+static int CliBlogTheme(string[] args)
+{
+    string? repoPath = null;
+
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "--repo" && i + 1 < args.Length)
+            repoPath = args[++i];
+    }
+
+    repoPath ??= BlogService.LoadConfig().RepoPath;
+    if (string.IsNullOrWhiteSpace(repoPath))
+    {
+        Console.Error.WriteLine("Usage: mdpost blog-theme [--repo <path-to-local-clone>]");
+        Console.Error.WriteLine("Configure a blog repo first with `mdpost blog-init`, or pass --repo explicitly.");
+        return 1;
+    }
+
+    try
+    {
+        var writtenFiles = BlogThemeInstaller.Install(repoPath);
+        Console.WriteLine($"Installed blog theme in: {Path.GetFullPath(repoPath)}");
+        foreach (var file in writtenFiles)
+            Console.WriteLine($"  updated {file}");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Theme install failed: {ex.Message}");
+        return 1;
+    }
+
     return 0;
 }
 
@@ -365,7 +437,7 @@ static int CliCfBlogInit(string[] args)
     };
     CloudflarePagesService.SaveConfig(config);
 
-    Console.WriteLine("Cloudflare Pages blog config saved. Use --backend cf-blog to publish posts.");
+    Console.WriteLine("Cloudflare Pages blog config saved. Use `mdpost default-backend cf-blog` to make it the default upload target.");
     return 0;
 }
 
@@ -381,18 +453,26 @@ static void PrintHelp()
           mdpost list [--tag <t>]   List all posts, optionally filter by tag
           mdpost search <query>     Full-text search across posts
           mdpost url <slug>         Print the remote URL for a post
+          mdpost default-backend    Show or set the default upload backend
           mdpost blog-init          Configure the blog backend
+          mdpost blog-theme         Install the bundled dark blog theme
           mdpost help               Show this help
 
         Upload options:
           --title, -t <title>       Post title (defaults to filename)
           --tags <t1,t2>            Comma-separated tags
-          --backend, -b <name>      rentry (default), paste.rs, blog, cf-blog
+          --backend, -b <name>      rentry, paste.rs, blog, cf-blog
           --local                   Save locally only, don't upload
           --stdin                   Read content from stdin
 
+        Backend defaults:
+          mdpost default-backend                Print the current default backend
+          mdpost default-backend blog           Save blog as the default target
+          mdpost default-backend --list         Show all available backends
+
         Blog setup:
           mdpost blog-init [--repo <path>] [--url <base-url>]
+          mdpost blog-theme [--repo <path>]
           mdpost cf-blog-init --repo <path> --url <base-url>
         """);
 }
@@ -414,3 +494,18 @@ static string GenerateSlug(string title)
 
 static string Truncate(string text, int maxLen) =>
     text.Length <= maxLen ? text : text[..(maxLen - 3)] + "...";
+
+static IPasteService? FindPasteService(IEnumerable<IPasteService> pasteServices, string backendName)
+{
+    return pasteServices.FirstOrDefault(service =>
+        string.Equals(service.Name, backendName, StringComparison.OrdinalIgnoreCase));
+}
+
+static string GetDefaultBackend(MdPostConfig config, IEnumerable<IPasteService> pasteServices)
+{
+    return FindPasteService(pasteServices, config.DefaultBackend)?.Name
+        ?? pasteServices.First().Name;
+}
+
+static string FormatBackendList(IEnumerable<IPasteService> pasteServices) =>
+    string.Join(", ", pasteServices.Select(service => service.Name));
