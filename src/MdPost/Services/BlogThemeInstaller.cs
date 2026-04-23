@@ -118,6 +118,8 @@ public static class BlogThemeInstaller
         """;
 
     private const string DefaultLayout = """
+        ---
+        ---
         <!DOCTYPE html>
         <html lang="{{ page.lang | default: site.lang | default: 'en' }}">
           <head>
@@ -157,6 +159,9 @@ public static class BlogThemeInstaller
         """;
 
     private const string HomeLayout = """
+        ---
+        layout: default
+        ---
         <section class="hero">
           <p class="eyebrow">Markdown posts, research notes, and quick dispatches</p>
           <h1>{{ page.title | default: site.title }}</h1>
@@ -197,6 +202,9 @@ public static class BlogThemeInstaller
         """;
 
     private const string PostLayout = """
+        ---
+        layout: default
+        ---
         <article class="post-shell">
           <p class="back-link"><a href="{{ '/' | relative_url }}">All posts</a></p>
 
