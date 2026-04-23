@@ -319,7 +319,7 @@ public static class BlogThemeInstaller
           --radius: 24px;
           --radius-sm: 14px;
           --content-width: min(74rem, calc(100vw - 2.5rem));
-          --prose-width: min(72ch, 100%);
+          --copy-width: min(78ch, 100%);
           --body-font: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
           --ui-font: "Avenir Next", "Segoe UI", "Trebuchet MS", sans-serif;
           --mono-font: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace;
@@ -542,11 +542,15 @@ public static class BlogThemeInstaller
         }
 
         .post-content {
-          width: var(--prose-width);
+          width: 100%;
           max-width: 100%;
           padding: clamp(1.25rem, 3vw, 2.3rem);
           border-radius: calc(var(--radius) + 4px);
           background: rgba(7, 12, 24, 0.74);
+        }
+
+        .post-content > :where(h2, h3, h4, p, ul, ol, blockquote, hr) {
+          max-width: var(--copy-width);
         }
 
         .post-content > :first-child {
