@@ -160,71 +160,141 @@ public static class BlogThemeInstaller
 
     private const string HomeLayout = """
         ---
-        layout: default
         ---
-        <section class="hero">
-          <p class="eyebrow">Markdown posts, research notes, and quick dispatches</p>
-          <h1>{{ page.title | default: site.title }}</h1>
-          {% if site.description %}
-            <p class="hero__lede">{{ site.description }}</p>
-          {% endif %}
-        </section>
+        <!DOCTYPE html>
+        <html lang="{{ page.lang | default: site.lang | default: 'en' }}">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>{% if page.title and page.title != site.title %}{{ page.title | escape }} | {{ site.title | escape }}{% else %}{{ site.title | default: page.title | escape }}{% endif %}</title>
+            {% assign meta_description = page.description | default: page.excerpt | default: site.description %}
+            <meta name="description" content="{{ meta_description | strip_html | strip_newlines | escape }}">
+            <meta name="color-scheme" content="dark">
+            <link rel="canonical" href="{{ page.url | absolute_url }}">
+            <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+          </head>
+          <body>
+            <div class="page-glow page-glow--top"></div>
+            <div class="page-glow page-glow--bottom"></div>
 
-        {% if site.posts.size > 0 %}
-          <section class="post-grid">
-            {% for post in site.posts %}
-              {% assign excerpt = post.excerpt | strip_html | strip_newlines | truncate: 220 %}
-              <article class="post-card">
-                <p class="post-card__meta">{{ post.date | date: "%B %-d, %Y" }}</p>
-                <h2><a href="{{ post.url | relative_url }}">{{ post.title }}</a></h2>
+            <header class="site-shell">
+              <div class="site-header">
+                <a class="brand" href="{{ '/' | relative_url }}">
+                  <span class="brand__label">{{ site.title | default: 'Blog' }}</span>
+                  {% if site.description %}
+                    <span class="brand__tagline">{{ site.description }}</span>
+                  {% endif %}
+                </a>
+              </div>
+            </header>
 
-                {% if post.tags and post.tags.size > 0 %}
-                  <p class="tag-row">
-                    {% for tag in post.tags %}
-                      <span class="tag-pill">{{ tag }}</span>
-                    {% endfor %}
-                  </p>
+            <main class="site-shell">
+              <section class="hero">
+                <p class="eyebrow">Markdown posts, research notes, and quick dispatches</p>
+                <h1>{{ page.title | default: site.title }}</h1>
+                {% if site.description %}
+                  <p class="hero__lede">{{ site.description }}</p>
                 {% endif %}
+              </section>
 
-                {% if excerpt != "" %}
-                  <p class="post-card__excerpt">{{ excerpt }}</p>
-                {% endif %}
+              {{ content }}
 
-                <p class="post-card__cta"><a href="{{ post.url | relative_url }}">Read post</a></p>
-              </article>
-            {% endfor %}
-          </section>
-        {% else %}
-          <section class="empty-state">
-            <p>No posts yet. Publish your first one with <code>mdpost upload --backend blog</code>.</p>
-          </section>
-        {% endif %}
+              {% if site.posts.size > 0 %}
+                <section class="post-grid">
+                  {% for post in site.posts %}
+                    {% assign excerpt = post.excerpt | strip_html | strip_newlines | truncate: 220 %}
+                    <article class="post-card">
+                      <p class="post-card__meta">{{ post.date | date: "%B %-d, %Y" }}</p>
+                      <h2><a href="{{ post.url | relative_url }}">{{ post.title }}</a></h2>
+
+                      {% if post.tags and post.tags.size > 0 %}
+                        <p class="tag-row">
+                          {% for tag in post.tags %}
+                            <span class="tag-pill">{{ tag }}</span>
+                          {% endfor %}
+                        </p>
+                      {% endif %}
+
+                      {% if excerpt != "" %}
+                        <p class="post-card__excerpt">{{ excerpt }}</p>
+                      {% endif %}
+
+                      <p class="post-card__cta"><a href="{{ post.url | relative_url }}">Read post</a></p>
+                    </article>
+                  {% endfor %}
+                </section>
+              {% else %}
+                <section class="empty-state">
+                  <p>No posts yet. Publish your first one with <code>mdpost upload --backend blog</code>.</p>
+                </section>
+              {% endif %}
+            </main>
+
+            <footer class="site-shell site-footer">
+              <p>Published with mdpost and styled for late-night reading.</p>
+            </footer>
+          </body>
+        </html>
         """;
 
     private const string PostLayout = """
         ---
-        layout: default
         ---
-        <article class="post-shell">
-          <p class="back-link"><a href="{{ '/' | relative_url }}">All posts</a></p>
+        <!DOCTYPE html>
+        <html lang="{{ page.lang | default: site.lang | default: 'en' }}">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>{% if page.title and page.title != site.title %}{{ page.title | escape }} | {{ site.title | escape }}{% else %}{{ site.title | default: page.title | escape }}{% endif %}</title>
+            {% assign meta_description = page.description | default: page.excerpt | default: site.description %}
+            <meta name="description" content="{{ meta_description | strip_html | strip_newlines | escape }}">
+            <meta name="color-scheme" content="dark">
+            <link rel="canonical" href="{{ page.url | absolute_url }}">
+            <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+          </head>
+          <body>
+            <div class="page-glow page-glow--top"></div>
+            <div class="page-glow page-glow--bottom"></div>
 
-          <header class="post-hero">
-            <p class="eyebrow">{{ page.date | date: "%B %-d, %Y" }}</p>
-            <h1>{{ page.title | escape }}</h1>
+            <header class="site-shell">
+              <div class="site-header">
+                <a class="brand" href="{{ '/' | relative_url }}">
+                  <span class="brand__label">{{ site.title | default: 'Blog' }}</span>
+                  {% if site.description %}
+                    <span class="brand__tagline">{{ site.description }}</span>
+                  {% endif %}
+                </a>
+              </div>
+            </header>
 
-            {% if page.tags and page.tags.size > 0 %}
-              <p class="tag-row">
-                {% for tag in page.tags %}
-                  <span class="tag-pill">{{ tag }}</span>
-                {% endfor %}
-              </p>
-            {% endif %}
-          </header>
+            <main class="site-shell">
+              <article class="post-shell">
+                <p class="back-link"><a href="{{ '/' | relative_url }}">All posts</a></p>
 
-          <div class="post-content">
-            {{ content }}
-          </div>
-        </article>
+                <header class="post-hero">
+                  <p class="eyebrow">{{ page.date | date: "%B %-d, %Y" }}</p>
+                  <h1>{{ page.title | escape }}</h1>
+
+                  {% if page.tags and page.tags.size > 0 %}
+                    <p class="tag-row">
+                      {% for tag in page.tags %}
+                        <span class="tag-pill">{{ tag }}</span>
+                      {% endfor %}
+                    </p>
+                  {% endif %}
+                </header>
+
+                <div class="post-content">
+                  {{ content }}
+                </div>
+              </article>
+            </main>
+
+            <footer class="site-shell site-footer">
+              <p>Published with mdpost and styled for late-night reading.</p>
+            </footer>
+          </body>
+        </html>
         """;
 
     private const string StyleSheet = """
